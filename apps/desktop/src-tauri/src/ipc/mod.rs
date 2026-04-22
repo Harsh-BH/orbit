@@ -1,5 +1,11 @@
 //! Tauri command handlers exposed to the frontend.
 //!
-//! Commands are the only way the UI interacts with core state. Everything is
-//! async, returns structured errors, and is registered in `lib.rs::run`.
-//! Phase 1 adds the first commands (`spawn_agent`, `send_message`).
+//! Commands are the only way the UI interacts with core state. Everything
+//! is async, returns structured string errors (Tauri serializes), and is
+//! registered in `lib.rs::run`.
+
+pub mod commands;
+pub mod events;
+
+pub use commands::*;
+pub use events::*;
