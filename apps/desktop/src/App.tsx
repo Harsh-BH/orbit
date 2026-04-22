@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { CanvasPlaceholder } from '@/components/layout/CanvasPlaceholder';
 import { AgentList } from '@/features/agents/agent-list';
 import { SpawnAgentDialog } from '@/features/agents/spawn-agent-dialog';
-import { AgentChatPanel } from '@/features/agents/agent-chat-panel';
+import { AgentDetailPanel } from '@/features/agents/agent-detail-panel';
 import { SystemHealthSetupView } from '@/features/agents/system-health-banner';
 import { Canvas } from '@/features/canvas/canvas';
 import type { XY } from '@/stores/agents';
@@ -125,7 +125,7 @@ export function App(): JSX.Element {
           <>
             <ResizeHandle />
             <Panel defaultSize={24} minSize={18} maxSize={34} className="min-w-[360px]">
-              <AgentChatPanel />
+              <AgentDetailPanel />
             </Panel>
           </>
         ) : null}

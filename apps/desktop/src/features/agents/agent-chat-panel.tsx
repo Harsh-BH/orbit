@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { Message } from '@orbit/types';
 import { cn } from '@/lib/cn';
@@ -25,6 +25,16 @@ export function AgentChatPanel(): JSX.Element {
   );
   const setMessages = useAgentsStore((s) => s.setMessages);
 
+  // Per-agent draft + scroll.
+  const draft = useAgentsStore((s) =>
+    s.selectedAgentId ? (s.chatDraftByAgent[s.selectedAgentId] ?? '') : '',
+  );
+  const savedScroll = useAgentsStore((s) =>
+    s.selectedAgentId ? (s.chatScrollByAgent[s.selectedAgentId] ?? null) : null,
+  );
+  const setChatDraft = useAgentsStore((s) => s.setChatDraft);
+  const setChatScroll = useAgentsStore((s) => s.setChatScroll);
+
   useQuery({
     queryKey: ['conversation', selectedAgentId],
     queryFn: async () => {
@@ -44,13 +54,36 @@ export function AgentChatPanel(): JSX.Element {
   });
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Restore per-agent scroll position synchronously on agent switch so
+  // the user doesn't see the scroll jump during the render.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !selectedAgentId) return;
+    if (savedScroll !== null) {
+      el.scrollTop = savedScroll;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [selectedAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-pin to the bottom while streaming, unless the user has
+  // scrolled up (we check a 40px threshold so small jitter doesn't
+  // disable auto-scroll).
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (pinned) el.scrollTop = el.scrollHeight;
   }, [messages.length, streaming?.text, streaming?.toolCalls.length]);
 
-  // Merge tool_use + tool_result rows so a single tool renders as one bubble.
+  // Persist scroll offset to the store on user scroll.
+  const onScroll = (): void => {
+    const el = scrollRef.current;
+    if (!el || !selectedAgentId) return;
+    setChatScroll(selectedAgentId, el.scrollTop);
+  };
+
   const mergedRows = useMemo(() => mergeToolPairs(messages), [messages]);
 
   if (!agent) {
@@ -64,11 +97,11 @@ export function AgentChatPanel(): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-2 border-b border-border-subtle bg-panel px-4 py-2">
-        <span aria-hidden className="text-16">
+        <span aria-hidden className="orbit-emoji text-16">
           {agent.emoji}
         </span>
         <span className="text-13 font-medium text-text-primary">{agent.name}</span>
-        <span className="text-11 text-text-tertiary">{agent.workingDir}</span>
+        <span className="truncate text-11 text-text-tertiary">{agent.workingDir}</span>
         <span
           className={cn(
             'ml-auto rounded-input px-2 py-0.5 text-11',
@@ -83,7 +116,7 @@ export function AgentChatPanel(): JSX.Element {
         </span>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="mx-auto flex max-w-[720px] flex-col gap-3">
           {mergedRows.map((row) => {
             if (row.kind === 'plain') {
@@ -123,8 +156,11 @@ export function AgentChatPanel(): JSX.Element {
       </div>
 
       <ChatInput
+        value={draft}
+        onChange={(v) => selectedAgentId && setChatDraft(selectedAgentId, v)}
         disabled={send.isPending || agent.status === 'active'}
         onSend={(text) => send.mutateAsync(text)}
+        focusKey={selectedAgentId ?? 'none'}
       />
     </div>
   );

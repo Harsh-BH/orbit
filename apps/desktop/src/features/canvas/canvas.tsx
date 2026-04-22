@@ -12,15 +12,18 @@ import {
   type OnNodesChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { useAgentsStore, deriveStatus, type XY } from '@/stores/agents';
-import { ipcAgentUpdatePosition } from '@/lib/ipc';
+import { useUiStore } from '@/stores/ui-store';
+import { ipcAgentTerminate, ipcAgentUpdatePosition } from '@/lib/ipc';
 import type { Agent, Message } from '@orbit/types';
 import { nodeTypes } from './node-types';
 import type { AgentNodeData } from './nodes/agent-node';
 import { EmptyCanvasPrompt } from './empty-canvas-prompt';
 import { CanvasToolbar } from './canvas-toolbar';
 import { useCanvasShortcuts } from './use-canvas-shortcuts';
+import { AgentContextMenu, type AgentContextMenuAction } from './agent-context-menu';
 
 interface Props {
   onRequestSpawn: (position: XY | null) => void;
@@ -49,8 +52,42 @@ function CanvasInner({ onRequestSpawn }: Props): JSX.Element {
 
   const flow = useReactFlow<Node<AgentNodeData>>();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const openRightPanelTab = useUiStore((s) => s.openRightPanelTab);
+  const qc = useQueryClient();
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    agentId: string;
+  } | null>(null);
+
+  const terminate = useMutation({
+    mutationFn: (agentId: string) => ipcAgentTerminate(agentId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
 
   useCanvasShortcuts(onRequestSpawn);
+
+  // Smoothly pan the viewport to center on the selected agent when
+  // selection changes from outside the canvas (sidebar click, keyboard
+  // shortcut, etc.). We track the last selection we centered on so
+  // clicking a node doesn't retrigger a jarring pan.
+  const lastCenteredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedAgentId) {
+      lastCenteredRef.current = null;
+      return;
+    }
+    if (lastCenteredRef.current === selectedAgentId) return;
+    const agent = agents.find((a) => a.id === selectedAgentId);
+    if (!agent) return;
+    lastCenteredRef.current = selectedAgentId;
+    void flow.setCenter(agent.positionX, agent.positionY, {
+      duration: 300,
+      zoom: flow.getZoom(),
+    });
+  }, [selectedAgentId, agents, flow]);
 
   // Derive React Flow nodes from the store. Position is authoritative
   // from the store; React Flow never owns position state.
@@ -131,19 +168,71 @@ function CanvasInner({ onRequestSpawn }: Props): JSX.Element {
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_e, node) => {
+      // Clicking an already-selected agent is a no-op (spec: clicking an
+      // agent while it's already selected does not toggle off).
+      if (selectedAgentId === node.id) return;
       selectAgent(node.id);
+      // Suppress the pan-on-selection effect above — the agent is
+      // already where the cursor is; no need to animate.
+      lastCenteredRef.current = node.id;
+    },
+    [selectedAgentId, selectAgent],
+  );
+
+  const onNodeDoubleClick = useCallback<NodeMouseHandler>(
+    (_e, node) => {
+      selectAgent(node.id);
+      lastCenteredRef.current = node.id;
+      openRightPanelTab('settings');
+    },
+    [selectAgent, openRightPanelTab],
+  );
+
+  const onNodeContextMenu = useCallback<NodeMouseHandler>(
+    (e, node) => {
+      e.preventDefault();
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      setContextMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        agentId: node.id,
+      });
+      selectAgent(node.id);
+      lastCenteredRef.current = node.id;
     },
     [selectAgent],
   );
 
-  // Double-click routing is wired up in M8.
+  const handleContextMenuAction = useCallback(
+    (action: AgentContextMenuAction['id']) => {
+      const agentId = contextMenu?.agentId;
+      if (!agentId) return;
+      switch (action) {
+        case 'focus-chat':
+          selectAgent(agentId);
+          openRightPanelTab('chat');
+          break;
+        case 'rename':
+          selectAgent(agentId);
+          openRightPanelTab('settings');
+          break;
+        case 'terminate':
+          terminate.mutate(agentId);
+          break;
+      }
+    },
+    [contextMenu, selectAgent, openRightPanelTab, terminate],
+  );
+
   const onPaneClick = useCallback(() => {
-    // Deselect on empty-canvas click.
+    // Deselect on empty-canvas click, unless nothing is selected — in
+    // that case, we treat it as a deliberate empty click and still
+    // clear the "last centered" bookkeeping.
     selectAgent(null);
   }, [selectAgent]);
 
-  // Spawn flow — M7. Clicking empty canvas with no agent selected
-  // opens the spawn dialog at the clicked position.
+  // Double-click empty canvas spawns an agent at the clicked position.
   const onPaneDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (!containerRef.current) return;
@@ -169,6 +258,8 @@ function CanvasInner({ onRequestSpawn }: Props): JSX.Element {
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
+        onNodeContextMenu={onNodeContextMenu}
         onPaneClick={onPaneClick}
         onDoubleClick={onPaneDoubleClick}
         minZoom={MIN_ZOOM}
@@ -188,6 +279,14 @@ function CanvasInner({ onRequestSpawn }: Props): JSX.Element {
       </ReactFlow>
       {isEmpty ? <EmptyCanvasPrompt /> : null}
       <CanvasToolbar />
+      {contextMenu ? (
+        <AgentContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onSelect={handleContextMenuAction}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -61,22 +61,30 @@ export function CanvasToolbar(): JSX.Element {
       <ToolbarButton
         icon={ZoomInIcon}
         label="Zoom in"
-        onClick={() => flow.zoomIn({ duration: 180 })}
+        onClick={() => {
+          void flow.zoomIn({ duration: 180 });
+        }}
       />
       <ToolbarButton
         icon={ZoomOutIcon}
         label="Zoom out"
-        onClick={() => flow.zoomOut({ duration: 180 })}
+        onClick={() => {
+          void flow.zoomOut({ duration: 180 });
+        }}
       />
       <ToolbarButton
         icon={MaximizeIcon}
         label="Fit to view"
-        onClick={() => flow.fitView({ padding: 0.2, duration: 260 })}
+        onClick={() => {
+          void flow.fitView({ padding: 0.2, duration: 260 });
+        }}
       />
       <ToolbarButton
         icon={RotateCcwIcon}
         label="Reset zoom"
-        onClick={() => flow.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 260 })}
+        onClick={() => {
+          void flow.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 260 });
+        }}
       />
       <Separator />
       <ToolbarButton
