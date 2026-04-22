@@ -34,7 +34,8 @@ orbit/
 ├── apps/
 │   └── desktop/            Tauri app — React frontend + Rust backend
 │       ├── src/            React UI
-│       └── src-tauri/      Rust core (agents, broker, db, git, ipc)
+│       └── src-tauri/      Rust core (agents, broker, db, git,
+ipc)
 ├── packages/
 │   ├── config/             Shared ESLint + tsconfig presets
 │   ├── types/              Shared domain types
