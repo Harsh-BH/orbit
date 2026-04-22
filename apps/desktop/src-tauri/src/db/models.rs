@@ -34,9 +34,11 @@ pub struct Agent {
     pub folder_access: String,
     pub team_id: Option<String>,
 
-    // Phase 2 — canvas position.
-    pub position_x: Option<f64>,
-    pub position_y: Option<f64>,
+    // Phase 2 — canvas position. Column is technically nullable at the DB
+    // level (leftover from the 0001 placeholder), but migration 0002
+    // backfills any NULLs and the application treats these as required.
+    pub position_x: f64,
+    pub position_y: f64,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

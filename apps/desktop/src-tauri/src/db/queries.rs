@@ -15,13 +15,16 @@ pub struct NewAgent<'a> {
     pub color: &'a str,
     pub working_dir: &'a str,
     pub model_override: Option<&'a str>,
+    pub position_x: f64,
+    pub position_y: f64,
 }
 
 pub async fn insert_agent(pool: &SqlitePool, new: NewAgent<'_>) -> Result<Agent, DbError> {
     let now = Utc::now();
     sqlx::query(
-        "INSERT INTO agents (id, name, emoji, color, working_dir, model_override, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'idle', ?, ?)",
+        "INSERT INTO agents (id, name, emoji, color, working_dir, model_override, status,
+                             position_x, position_y, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)",
     )
     .bind(new.id)
     .bind(new.name)
@@ -29,6 +32,8 @@ pub async fn insert_agent(pool: &SqlitePool, new: NewAgent<'_>) -> Result<Agent,
     .bind(new.color)
     .bind(new.working_dir)
     .bind(new.model_override)
+    .bind(new.position_x)
+    .bind(new.position_y)
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -37,6 +42,39 @@ pub async fn insert_agent(pool: &SqlitePool, new: NewAgent<'_>) -> Result<Agent,
     get_agent(pool, new.id)
         .await?
         .ok_or_else(|| DbError::Sqlx(sqlx::Error::RowNotFound))
+}
+
+pub async fn update_agent_position(
+    pool: &SqlitePool,
+    id: &str,
+    x: f64,
+    y: f64,
+) -> Result<(), DbError> {
+    sqlx::query("UPDATE agents SET position_x = ?, position_y = ?, updated_at = ? WHERE id = ?")
+        .bind(x)
+        .bind(y)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_agent_name(pool: &SqlitePool, id: &str, name: &str) -> Result<(), DbError> {
+    sqlx::query("UPDATE agents SET name = ?, updated_at = ? WHERE id = ?")
+        .bind(name)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_agents(pool: &SqlitePool) -> Result<i64, DbError> {
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agents")
+        .fetch_one(pool)
+        .await?;
+    Ok(n)
 }
 
 pub async fn get_agent(pool: &SqlitePool, id: &str) -> Result<Option<Agent>, DbError> {
@@ -202,6 +240,8 @@ mod tests {
                 color: "#5E6AD2",
                 working_dir: "/tmp/scout",
                 model_override: None,
+                position_x: 0.0,
+                position_y: 0.0,
             },
         )
         .await
@@ -228,6 +268,8 @@ mod tests {
                 color: "#5E6AD2",
                 working_dir: "/tmp",
                 model_override: None,
+                position_x: 0.0,
+                position_y: 0.0,
             },
         )
         .await
@@ -252,6 +294,8 @@ mod tests {
                 color: "#5E6AD2",
                 working_dir: "/tmp",
                 model_override: None,
+                position_x: 0.0,
+                position_y: 0.0,
             },
         )
         .await
@@ -278,6 +322,8 @@ mod tests {
                 color: "#5E6AD2",
                 working_dir: "/tmp",
                 model_override: None,
+                position_x: 0.0,
+                position_y: 0.0,
             },
         )
         .await
@@ -320,6 +366,8 @@ mod tests {
                 color: "#5E6AD2",
                 working_dir: "/tmp",
                 model_override: None,
+                position_x: 0.0,
+                position_y: 0.0,
             },
         )
         .await

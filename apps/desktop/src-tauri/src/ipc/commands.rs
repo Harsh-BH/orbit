@@ -39,6 +39,13 @@ pub struct SpawnAgentInput {
     pub working_dir: PathBuf,
     #[serde(default)]
     pub model_override: Option<String>,
+    /// Canvas position at which to place the new agent. Defaults to the
+    /// origin if omitted — clients that spawn from the canvas always
+    /// pass the clicked point.
+    #[serde(default)]
+    pub position_x: f64,
+    #[serde(default)]
+    pub position_y: f64,
 }
 
 #[tauri::command]
@@ -60,6 +67,19 @@ pub async fn agent_spawn(
     let id = uuid::Uuid::new_v4().to_string();
     let working_dir_str = input.working_dir.to_string_lossy().to_string();
 
+    // Phase 2: soft cap on concurrent agents. We revisit this in later
+    // phases; the cap prevents a user from stumbling into OS-level
+    // resource issues while the supervisor matures.
+    const MAX_AGENTS: i64 = 10;
+    let current = queries::count_agents(&state.pool)
+        .await
+        .map_err(|e| err("Failed to count agents", e))?;
+    if current >= MAX_AGENTS {
+        return Err(format!(
+            "You already have {current} agents running. Terminate some before spawning more (limit: {MAX_AGENTS}).",
+        ));
+    }
+
     let agent = queries::insert_agent(
         &state.pool,
         NewAgent {
@@ -69,6 +89,8 @@ pub async fn agent_spawn(
             color: &input.color,
             working_dir: &working_dir_str,
             model_override: input.model_override.as_deref(),
+            position_x: input.position_x,
+            position_y: input.position_y,
         },
     )
     .await
@@ -346,6 +368,33 @@ pub async fn agent_delete(state: State<'_, AppState>, agent_id: AgentId) -> Comm
     queries::delete_agent(&state.pool, &agent_id)
         .await
         .map_err(|e| err("Failed to delete agent", e))
+}
+
+#[tauri::command]
+pub async fn agent_update_position(
+    state: State<'_, AppState>,
+    agent_id: AgentId,
+    x: f64,
+    y: f64,
+) -> CommandResult<()> {
+    queries::update_agent_position(&state.pool, &agent_id, x, y)
+        .await
+        .map_err(|e| err("Failed to update agent position", e))
+}
+
+#[tauri::command]
+pub async fn agent_rename(
+    state: State<'_, AppState>,
+    agent_id: AgentId,
+    name: String,
+) -> CommandResult<()> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Agent name cannot be empty.".to_string());
+    }
+    queries::update_agent_name(&state.pool, &agent_id, trimmed)
+        .await
+        .map_err(|e| err("Failed to rename agent", e))
 }
 
 #[derive(Debug, Serialize)]

@@ -42,6 +42,8 @@ pub fn run() {
             ipc::commands::agent_send_message,
             ipc::commands::agent_terminate,
             ipc::commands::agent_delete,
+            ipc::commands::agent_update_position,
+            ipc::commands::agent_rename,
             ipc::commands::system_health_check,
         ])
         .setup(|app| {
