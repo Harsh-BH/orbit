@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Agent, AgentEvent } from '@orbit/types';
-import { useAgentsStore } from './agents';
+import { useAgentsStore, deriveStatus } from './agents';
 
 function makeAgent(id: string): Agent {
   return {
@@ -185,5 +185,87 @@ describe('agents store / applyEvent', () => {
     useAgentsStore.getState().appendPersistedMessage('a', m);
     useAgentsStore.getState().appendPersistedMessage('a', m);
     expect(useAgentsStore.getState().messagesByAgent['a']?.length).toBe(1);
+  });
+});
+
+describe('agents store / Phase 2', () => {
+  beforeEach(reset);
+
+  it('selectAgent replaces the selected id and tolerates null', () => {
+    useAgentsStore.getState().hydrate([makeAgent('a'), makeAgent('b')]);
+    useAgentsStore.getState().selectAgent('b');
+    expect(useAgentsStore.getState().selectedAgentId).toBe('b');
+    useAgentsStore.getState().selectAgent(null);
+    expect(useAgentsStore.getState().selectedAgentId).toBeNull();
+  });
+
+  it('updateAgentPosition writes both axes onto the agent', () => {
+    useAgentsStore.getState().upsertAgent(makeAgent('a'));
+    useAgentsStore.getState().updateAgentPosition('a', { x: 120, y: -48 });
+    const a = useAgentsStore.getState().agents['a'];
+    expect(a?.positionX).toBe(120);
+    expect(a?.positionY).toBe(-48);
+  });
+
+  it('per-agent chat drafts are preserved across agent switches', () => {
+    useAgentsStore.getState().hydrate([makeAgent('a'), makeAgent('b')]);
+    useAgentsStore.getState().setChatDraft('a', 'hello from A');
+    useAgentsStore.getState().setChatDraft('b', 'hello from B');
+    useAgentsStore.getState().selectAgent('b');
+    expect(useAgentsStore.getState().chatDraftByAgent['a']).toBe('hello from A');
+    expect(useAgentsStore.getState().chatDraftByAgent['b']).toBe('hello from B');
+  });
+
+  it('per-agent scroll offsets are preserved across agent switches', () => {
+    useAgentsStore.getState().hydrate([makeAgent('a'), makeAgent('b')]);
+    useAgentsStore.getState().setChatScroll('a', 480);
+    useAgentsStore.getState().setChatScroll('b', 120);
+    expect(useAgentsStore.getState().chatScrollByAgent['a']).toBe(480);
+    expect(useAgentsStore.getState().chatScrollByAgent['b']).toBe(120);
+  });
+
+  it('streaming states do not bleed across agents', () => {
+    useAgentsStore.getState().hydrate([makeAgent('a'), makeAgent('b')]);
+    const events: AgentEvent[] = [{ type: 'text_delta', content: 'A says hi' }];
+    for (const e of events) useAgentsStore.getState().applyEvent('a', e);
+    expect(useAgentsStore.getState().streamingByAgent['a']?.text).toBe('A says hi');
+    expect(useAgentsStore.getState().streamingByAgent['b']).toBeUndefined();
+  });
+
+  it('renameAgent updates the name field', () => {
+    useAgentsStore.getState().upsertAgent(makeAgent('a'));
+    useAgentsStore.getState().renameAgent('a', 'New Name');
+    expect(useAgentsStore.getState().agents['a']?.name).toBe('New Name');
+  });
+
+  it('removeAgent also clears the agent draft and scroll entries', () => {
+    useAgentsStore.getState().hydrate([makeAgent('a')]);
+    useAgentsStore.getState().setChatDraft('a', 'draft');
+    useAgentsStore.getState().setChatScroll('a', 500);
+    useAgentsStore.getState().removeAgent('a');
+    expect(useAgentsStore.getState().chatDraftByAgent['a']).toBeUndefined();
+    expect(useAgentsStore.getState().chatScrollByAgent['a']).toBeUndefined();
+  });
+});
+
+describe('deriveStatus', () => {
+  const a = makeAgent('a');
+
+  it('returns "active" when a stream is in progress', () => {
+    expect(deriveStatus(a, { text: 'hi', toolCalls: [], usage: null }, null, null)).toBe('active');
+  });
+
+  it('returns "error" when the agent.status is error or lastError is set', () => {
+    expect(deriveStatus({ ...a, status: 'error' }, null, null, null)).toBe('error');
+    expect(deriveStatus(a, null, 'boom', null)).toBe('error');
+  });
+
+  it('returns "waiting_for_human" when the last assistant text ends with ?', () => {
+    expect(deriveStatus(a, null, null, 'Can you confirm?')).toBe('waiting_for_human');
+  });
+
+  it('returns "idle" otherwise', () => {
+    expect(deriveStatus(a, null, null, 'ok')).toBe('idle');
+    expect(deriveStatus(a, null, null, null)).toBe('idle');
   });
 });
